@@ -1,0 +1,63 @@
+-- ============================================================================
+-- CORE SCHEMA - Shared data tables (populated from provider content)
+-- ============================================================================
+
+-- Market prices: daily OHLCV data
+CREATE TABLE IF NOT EXISTS CORE.MARKET_PRICES (
+    SYMBOL          VARCHAR(20)     NOT NULL,
+    EXCHANGE        VARCHAR(10)     NOT NULL,
+    TRADE_DATE      DATE            NOT NULL,
+    OPEN_PRICE      NUMBER(18,6),
+    HIGH_PRICE      NUMBER(18,6),
+    LOW_PRICE       NUMBER(18,6),
+    CLOSE_PRICE     NUMBER(18,6),
+    ADJ_CLOSE       NUMBER(18,6),
+    VOLUME          NUMBER(20,0),
+    CURRENCY        VARCHAR(3)      DEFAULT 'USD',
+    LOADED_AT       TIMESTAMP_NTZ   DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- Company fundamentals: quarterly financials
+CREATE TABLE IF NOT EXISTS CORE.COMPANY_FUNDAMENTALS (
+    COMPANY_ID      VARCHAR(50)     NOT NULL,
+    SYMBOL          VARCHAR(20)     NOT NULL,
+    COMPANY_NAME    VARCHAR(200),
+    FISCAL_YEAR     INTEGER         NOT NULL,
+    FISCAL_QUARTER  INTEGER         NOT NULL,
+    REVENUE         NUMBER(20,2),
+    NET_INCOME      NUMBER(20,2),
+    EPS             NUMBER(12,4),
+    PE_RATIO        NUMBER(12,4),
+    MARKET_CAP      NUMBER(20,2),
+    SECTOR          VARCHAR(100),
+    INDUSTRY        VARCHAR(100),
+    LOADED_AT       TIMESTAMP_NTZ   DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- Risk metrics: pre-computed risk analytics
+CREATE TABLE IF NOT EXISTS CORE.RISK_METRICS (
+    SYMBOL          VARCHAR(20)     NOT NULL,
+    CALC_DATE       DATE            NOT NULL,
+    VOLATILITY_30D  NUMBER(12,6),
+    VOLATILITY_90D  NUMBER(12,6),
+    SHARPE_RATIO    NUMBER(12,6),
+    BETA            NUMBER(12,6),
+    VAR_95          NUMBER(12,6),
+    MAX_DRAWDOWN    NUMBER(12,6),
+    SORTINO_RATIO   NUMBER(12,6),
+    LOADED_AT       TIMESTAMP_NTZ   DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- Indices & benchmarks
+CREATE TABLE IF NOT EXISTS CORE.BENCHMARK_RETURNS (
+    BENCHMARK_NAME  VARCHAR(50)     NOT NULL,
+    RETURN_DATE     DATE            NOT NULL,
+    DAILY_RETURN    NUMBER(12,8),
+    CUMULATIVE_RETURN NUMBER(12,8),
+    LOADED_AT       TIMESTAMP_NTZ   DEFAULT CURRENT_TIMESTAMP()
+);
+
+-- Grant read access
+GRANT SELECT ON ALL TABLES IN SCHEMA CORE TO APPLICATION ROLE APP_VIEWER;
+GRANT SELECT ON ALL TABLES IN SCHEMA CORE TO APPLICATION ROLE APP_ANALYST;
+GRANT SELECT ON ALL TABLES IN SCHEMA CORE TO APPLICATION ROLE APP_ADMIN;

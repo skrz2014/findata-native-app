@@ -1,0 +1,145 @@
+name: FinData Native App CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+  SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+  SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+  SNOWFLAKE_ROLE: FINDATA_APP_DEVELOPER
+  SNOWFLAKE_WAREHOUSE: COMPUTE_WH
+
+jobs:
+  # =========================================================================
+  # Stage 1: Validate (lint, schema check)
+  # =========================================================================
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SQLFluff
+        run: pip install sqlfluff
+
+      - name: Lint SQL files
+        run: |
+          sqlfluff lint scripts/ \
+            --dialect snowflake \
+            --exclude-rules LT12,AM04 \
+            --format github-annotation
+
+      - name: Validate manifest.yml
+        run: |
+          python -c "
+          import yaml, sys
+          with open('manifest.yml') as f:
+              m = yaml.safe_load(f)
+          assert m.get('manifest_version') == 2, 'manifest_version must be 2'
+          assert 'artifacts' in m, 'artifacts required'
+          assert 'setup_script' in m['artifacts'], 'setup_script required'
+          print('manifest.yml is valid')
+          "
+
+      - name: Check for secrets in code
+        run: |
+          if grep -rn "password\|secret\|api_key\|token" scripts/ --include="*.sql" | grep -iv "comment\|--"; then
+            echo "WARNING: Potential secrets found in code"
+            exit 1
+          fi
+          echo "No secrets detected"
+
+  # =========================================================================
+  # Stage 2: Build & Test (dev environment)
+  # =========================================================================
+  build-and-test:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        uses: Snowflake-Labs/snowflake-cli-action@v1
+        with:
+          cli-version: latest
+          default-config-file-path: .snowflake/config.toml
+
+      - name: Deploy to dev package
+        run: snow app run --no-interactive
+
+      - name: Run integration tests
+        run: |
+          for f in tests/integration/test_*.sql; do
+            echo "Running: $f"
+            snow sql --filename "$f"
+          done
+
+      - name: Run unit tests
+        run: |
+          for f in tests/unit/test_*.sql; do
+            echo "Running: $f"
+            snow sql --filename "$f"
+          done
+
+      - name: Teardown dev app
+        if: always()
+        run: snow app teardown --force --no-interactive
+
+  # =========================================================================
+  # Stage 3: Release (on merge to main)
+  # =========================================================================
+  release:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Snowflake CLI
+        uses: Snowflake-Labs/snowflake-cli-action@v1
+        with:
+          cli-version: latest
+          default-config-file-path: .snowflake/config.toml
+
+      - name: Extract version from manifest
+        id: version
+        run: |
+          VERSION=$(grep -A1 "^version:" manifest.yml | grep "name:" | awk '{print $2}')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Deploy files to production package stage
+        env:
+          SNOWFLAKE_ROLE: FINDATA_APP_RELEASE_MGR
+        run: snow app deploy --no-interactive
+
+      - name: Add version to production package
+        env:
+          SNOWFLAKE_ROLE: FINDATA_APP_RELEASE_MGR
+        run: |
+          snow sql --query "
+            ALTER APPLICATION PACKAGE FINDATA_APP_PKG
+              ADD VERSION ${{ steps.version.outputs.version }}
+              USING '@FINDATA_APP_PKG.STAGE_CONTENT.APP_CODE';
+          "
+
+      - name: Set release directive
+        env:
+          SNOWFLAKE_ROLE: FINDATA_APP_RELEASE_MGR
+        run: |
+          snow sql --query "
+            ALTER APPLICATION PACKAGE FINDATA_APP_PKG
+              SET DEFAULT RELEASE DIRECTIVE
+              VERSION = ${{ steps.version.outputs.version }}
+              PATCH = 0;
+          "
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "Release ${{ steps.version.outputs.version }}"
+          generate_release_notes: true
