@@ -1,32 +1,20 @@
-definition_version: 2
+definition_version: "1.1"
 
-entities:
-  findata_app_pkg:
-    type: application package
-    identifier: FINDATA_APP_PKG
-    manifest: manifest.yml
-    stage: stage_content.app_code
+native_app:
+  name: FINDATA_APP
+  source_stage: stage_content.app_code
+  artifacts:
+    - manifest.yml
+    - README.md
+    - scripts/
+    - streamlit/
+
+  package:
+    name: FINDATA_APP_PKG
+    role: ACCOUNTADMIN
     distribution: internal
-    artifacts:
-      - src: manifest.yml
-        dest: manifest.yml
-      - src: README.md
-        dest: README.md
-      - src: scripts/*
-        dest: scripts/
-      - src: streamlit/*
-        dest: streamlit/
-    meta:
-      role: ACCOUNTADMIN
-      warehouse: COMPUTE_WH
 
-  findata_app:
-    type: application
-    identifier: FINDATA_APP
-    from:
-      target: findata_app_pkg
-    telemetry:
-      share_mandatory_events: true
-    meta:
-      role: ACCOUNTADMIN
-      warehouse: COMPUTE_WH
+  application:
+    name: FINDATA_APP
+    role: ACCOUNTADMIN
+    warehouse: COMPUTE_WH
