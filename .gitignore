@@ -1,0 +1,6 @@
+output/
+.DS_Store
+*.pyc
+__pycache__/
+snowflake.local.yml
+.snowflake/
